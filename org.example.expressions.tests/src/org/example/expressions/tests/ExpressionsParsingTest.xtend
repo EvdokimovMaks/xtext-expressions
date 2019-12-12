@@ -25,11 +25,17 @@ import org.example.expressions.expressions.And
 import org.example.expressions.expressions.Equality
 import org.example.expressions.expressions.Comparison
 import org.example.expressions.expressions.Not
+import org.example.expressions.ExpressionsModelUtil
+import org.example.expressions.expressions.ExpressionsPackage
+import org.example.expressions.validation.ExpressionsValidator
+import org.eclipse.xtext.testing.validation.ValidationTestHelper
 
 @ExtendWith(InjectionExtension)
 @InjectWith(ExpressionsInjectorProvider)
 class ExpressionsParsingTest {
-	@Inject extension ParseHelper<ExpressionsModel> 
+	@Inject extension ParseHelper<ExpressionsModel>
+	@Inject extension ValidationTestHelper
+	@Inject extension ExpressionsModelUtil 
 	
 	@Test
 	def void loadModel() {
@@ -114,4 +120,40 @@ class ExpressionsParsingTest {
 	@Test def void testPrecedences() {
 		"!true||false&&1>(1/3+5*2)".assertRepr("((!true) || (false && (1 > ((1 / 3) + (5 * 2)))))")
 	}
+	
+	@Test def void variablesBeforeVariable() {
+		'''
+		eval true
+		var i = 0
+		eval i + 10
+		var j = i
+		eval i + j
+		'''.parse => [
+			assertVariablesDefinedBefore(0, "")
+			assertVariablesDefinedBefore(1, "")
+			assertVariablesDefinedBefore(2, "i")
+			assertVariablesDefinedBefore(3, "i")
+			assertVariablesDefinedBefore(4, "i,j")
+		]
+	}
+	
+	@Test def void testForwardReferenceInExpression() {
+		'''var i = j var j = 10'''.parse => [
+			assertError(ExpressionsPackage.eINSTANCE.variableRef, 
+				ExpressionsValidator.FORWARD_REFERENCE, 
+				"variable forward reference not allowed: 'j'"
+			)
+		]
+	}
+	
+	@Test def void testNoForwardReference() {
+		'''var j = 10 var i = j'''.parse.assertNoErrors
+	}
+	
+	def void assertVariablesDefinedBefore(ExpressionsModel model, int elemIndex, CharSequence expectedVars) {
+		expectedVars.assertEquals(
+			model.elements.get(elemIndex).variablesDefinedBefore.map[name].join(",")
+		)
+	}
+	
 }
